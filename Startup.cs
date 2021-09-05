@@ -2,16 +2,21 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using dotnet_rpg.Data;
 using dotnet_rpg.Services.CharacterService;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.HttpsPolicy;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi.Models;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using Swashbuckle.AspNetCore.Filters;
 
 namespace dotnet_rpg
 {
@@ -27,17 +32,41 @@ namespace dotnet_rpg
     // This method gets called by the runtime. Use this method to add services to the container.
     public void ConfigureServices(IServiceCollection services)
     {
-
+      // Added DB ConnectionStrings
+      services.AddDbContext<DataContext>(options =>
+        options.UseSqlServer(Configuration.GetConnectionString("DefaultConnection")));
       services.AddControllers();
       services.AddSwaggerGen(c =>
       {
         c.SwaggerDoc("v1", new OpenApiInfo { Title = "dotnet_rpg", Version = "v1" });
+        c.AddSecurityDefinition("oauth2", new OpenApiSecurityScheme
+        {
+          Description = "Standard Authorization header using the Bearer scheme. Ezample: \"bearer {token}\"",
+          In = ParameterLocation.Header,
+          Name = "Authorization",
+          Type = SecuritySchemeType.ApiKey
+        });
+        c.OperationFilter<SecurityRequirementsOperationFilter>();
       });
-      
+
       // 註冊 AddAutoMapper
       services.AddAutoMapper(typeof(Startup));
       // 註冊 如果有使用services需加入以下這行告訴APP有使用Services
       services.AddScoped<ICharacterService, CharacterService>();
+      // 註冊 IAuthRepository
+      services.AddScoped<IAuthRepository, AuthRepository>();
+      // 註冊 JWT Token
+      services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddJwtBearer(options =>
+        {
+          options.TokenValidationParameters = new TokenValidationParameters
+          {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(System.Text.Encoding.ASCII.GetBytes(Configuration.GetSection("AppSettings:Token").Value)),
+            ValidateIssuer = false,
+            ValidateAudience = false
+          };
+        });
     }
 
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -53,6 +82,9 @@ namespace dotnet_rpg
       app.UseHttpsRedirection();
 
       app.UseRouting();
+
+      // Add UseAuthentication Middlewere
+      app.UseAuthentication();
 
       app.UseAuthorization();
 
